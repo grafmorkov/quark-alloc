@@ -6,7 +6,6 @@
 #include <cstring>
 #include <algorithm>
 #include <stdexcept>
-#include <memory_resource>
 
 namespace quark::memory {
 
@@ -40,20 +39,21 @@ public:
     Arena(const Arena&) = delete;
     Arena& operator=(const Arena&) = delete;
 
-    // allocation
-
     void* alloc(size_t size, size_t align) {
-        Block* b = &blocks.back();
-
         while (true) {
+            Block* b = &blocks.back();
+
             std::byte* base = b->data + b->offset;
             size_t space = b->capacity - b->offset;
 
-            void* aligned = std::align(align, size, (void*&)base, space);
+            void* ptr = base;
+            void* aligned = std::align(align, size, ptr, space);
 
             if (aligned) {
-                size_t used_offset = (reinterpret_cast<std::byte*>(aligned) - b->data) + size;
-                b->offset = used_offset;
+                size_t new_offset =
+                    (reinterpret_cast<std::byte*>(ptr) - b->data) + size;
+
+                b->offset = new_offset;
 
                 stats.allocations++;
                 update_stats();
@@ -79,14 +79,10 @@ public:
         stats.used = 0;
     }
 
-    // stats API
-
     size_t used() const { return stats.used; }
     size_t peak() const { return stats.peak; }
     size_t allocations() const { return stats.allocations; }
     size_t block_count() const { return blocks.size(); }
-
-    // tools
 
     size_t mark() const {
         return blocks.back().offset;
@@ -95,10 +91,6 @@ public:
     void rewind(size_t m) {
         blocks.back().offset = m;
         update_stats();
-    }
-
-    void clear() {
-        reset();
     }
 
     void debug_fill(uint8_t byte = 0xCD) {
